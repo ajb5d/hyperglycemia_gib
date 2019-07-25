@@ -1,0 +1,121 @@
+---
+title: "R Notebook"
+output:
+  word_document: default
+  html_notebook: default
+---
+
+```{r}
+library(tidyverse)
+library(finalfit)
+library(cowplot)
+library(ggpubr)
+
+data <- read_csv("data.csv", col_types = cols(
+  icustay_id = col_double(),
+  hadm_id = col_double(),
+  subject_id = col_double(),
+  charttime = col_datetime(format = ""),
+  vtime = col_datetime(format = ""),
+  stime = col_datetime(format = ""),
+  vasopressors = col_logical(),
+  shock = col_logical(),
+  gib_codes = col_logical(),
+  gib_drg = col_logical(),
+  esld = col_factor(),
+  death = col_factor(),
+  age = col_double(),
+  glucose_max = col_double()
+))
+
+data %<>% mutate(
+  death = fct_recode(death, "Survivors" = "FALSE", "Non-Survivors" = "TRUE"),
+  esld = fct_recode(esld, "Yes" = "TRUE", "No" = "FALSE")
+) %>% filter(!is.na(glucose_max))
+```
+
+## Tables
+### All Patients
+```{r}
+explanatory = c("age", "esld", "glucose_max")
+dependent = 'death'
+
+data %>%
+  mutate(esld = ff_label(esld, "Cirrhosis"),
+         glucose_max = ff_label(glucose_max, "Maximum 24h Glucose (mg/dL)"),
+         age = ff_label(age, "Age (y)")) %>%
+  summary_factorlist(dependent, explanatory, p = TRUE, cont = "median", na_include = TRUE) %>%
+  knitr::kable(row.names = FALSE)
+```
+
+### ESLD Only
+```{r}
+explanatory = c("age", "glucose_max")
+dependent = 'death'
+
+data %>%
+  filter(esld == "Yes") %>%
+  mutate(esld = ff_label(esld, "Cirrhosis"),
+         glucose_max = ff_label(glucose_max, "Maximum 24h Glucose (mg/dL)"),
+         age = ff_label(age, "Age (y)")) %>%
+  summary_factorlist(dependent, explanatory, p = TRUE, cont = "median", na_include = TRUE) %>%
+  knitr::kable(row.names = FALSE)
+```
+### No ESLD Only
+```{r}
+explanatory = c("age", "glucose_max")
+dependent = 'death'
+
+data %>%
+  filter(esld == "No") %>%
+  mutate(esld = ff_label(esld, "Cirrhosis"),
+         glucose_max = ff_label(glucose_max, "Maximum 24h Glucose (mg/dL)"),
+         age = ff_label(age, "Age (y)")) %>%
+  summary_factorlist(dependent, explanatory, p = TRUE, cont = "median", na_include = TRUE) %>%
+  knitr::kable(row.names = FALSE)
+```
+
+## Figures
+### Figure 1
+```{r fig.width=8, fig.height=6}
+
+fig1a <- ggplot(data, aes(death, glucose_max)) + 
+  geom_violin() + 
+  geom_boxplot(width = 0.1) + 
+  geom_signif(comparisons = list(c("Survivors", "Non-Survivors")), map_signif_level = TRUE) + 
+  theme_pubr() + 
+  labs(y = "Maximum 24h Glucose (mg/dL)", 
+       x = "In-Hospital Mortality",
+       title = "All Patients")
+
+fig1b <- ggplot(data %>% filter(esld == "Yes"), aes(death, glucose_max)) + 
+  geom_violin() + 
+  geom_boxplot(width = 0.1) + 
+  geom_signif(comparisons = list(c("Survivors", "Non-Survivors")), map_signif_level = TRUE) + 
+  theme_pubr() + 
+  labs(y = "Maximum 24h Glucose (mg/dL)", 
+       x = "In-Hospital Mortality",
+       title = "ESLD")
+
+fig1c <- ggplot(data %>% filter(esld != "Yes"), aes(death, glucose_max)) + 
+  geom_violin() +
+  geom_boxplot(width = 0.1) + 
+  geom_signif(comparisons = list(c("Survivors", "Non-Survivors")), map_signif_level = TRUE) + 
+  theme_pubr() + 
+  labs(y = "Maximum 24h Glucose (mg/dL)", 
+       x = "In-Hospital Mortality", 
+       title = "No ESLD")
+
+fig1 <- plot_grid(fig1a, fig1b, fig1c, nrow = 1, labels = "AUTO")
+save_plot("figure1.pdf", fig1, base_height = 6, base_aspect_ratio = 2)
+fig1
+```
+
+## Statistics
+```{r}
+library(pROC)
+roc(death ~ glucose_max, data)
+roc(death ~ glucose_max, data %>% filter(esld != "Yes"))
+roc(death ~ glucose_max, data %>% filter(esld == "Yes"))
+```
+
